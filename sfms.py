@@ -176,8 +176,89 @@ def calcrsfr(pos0, sfr0, frac = 5.000E-01, ndim = 3):
     idx0   = np.arange(1, len(sfr) + 1, 1)
     idx    = idx0[(sfrf > frac)]
     idx    = idx[0]
-    rsfr50 = rpos[idx]
-    return rsfr50
+    rsfr   = rpos[idx]
+    return rsfr
+
+def calczgrad(pos, m, hrho, zm9, rmax, res):
+    # Search area. First 0.05 kpc, then 0.125, 0.25, 0.5, and finally 1.0 kpc
+    bpass  = [5.000E-02, 1.250E-01, 2.500E-01, 5.000E-01, 1.000E+00]
+    
+    # Different resolutions need difference pixel sizes
+    if (res == 2160): # TNG50-1 equiv.
+        pixl   =  1.000E-01
+        nmin   =  16 #min particles needed to be observationally equivalent
+    elif (run == 1080): # TNG50-2 equiv.
+        pixl   =  2.500E-01
+        nmin   =  8
+    elif (run == 540): # TNG50-3 equiv.
+        pixl   =  5.000E-01
+        nmin   =  4
+    elif (run == 270): # TNG50-4 equiv.
+        pixl   =  1.000E+00
+        nmin   =  2
+        
+    dr     =  1.00E-01 #kpc
+    pixa   =  pixl**2.000E+00
+    sigcut =  1.000E+00
+    rhocut =  1.300E-01
+    mcut   =  1.000E+01**sigcut * (pixa*1.000E+06)
+    
+    # Create map
+    pixlims = np.arange(-rmax, rmax + pixl, pixl)
+    pix   = len(pixlims) - 1
+    pixcs = pixlims[:-1] + (pixl / 2.000E+00)
+    rs    = np.full((pix, pix), np.nan, dtype = float)
+    for r in range(0, pix):
+        for c in range(0, pix):
+            rs[r,c] = np.sqrt(pixcs[r]**2.000E+00 + 
+                              pixcs[c]**2.000E+00 )
+    
+    # Will not work for EAGLE
+    rhoidx = hrho > rhocut
+        
+    # Mass map
+    xym, x, y = np.histogram2d(pos[:,0], pos[:,1], weights = m, bins = [pixlims, pixlims])
+    # Oxygen map
+    xyo, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,4]), bins = [pixlims, pixlims])
+    # Hydrogen map
+    xyh, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,0]), bins = [pixlims, pixlims])
+    xym       = np.transpose(xym)
+    xyo       = np.transpose(xyo)
+    xyh       = np.transpose(xyh)
+    rs        = np.ravel( rs)
+    xym       = np.ravel(xym)
+    xyo       = np.ravel(xyo)
+    xyh       = np.ravel(xyh)
+    xyh[xyh < 1.000E-12] = np.nan
+    
+    xyoh     = xyo / xyh
+    cutidx   =(xym > mcut) & (~np.isnan(xyoh))
+    rs       =   rs[cutidx]
+    xyoh     = xyoh[cutidx]
+    xyoh     = np.log10(xyoh * (1.000E+00 / 1.600E+01)) + 1.200E+01
+    rsortidx = np.argsort(rs)
+    rs       =   rs[rsortidx]
+    xyoh     = xyoh[rsortidx]
+   
+    robs   = np.arange(0.000E+00, rs[-1], dr)
+    lgrad  = len(robs)
+    stdrs  = np.zeros(lgrad,         dtype = float)
+    medohs =  np.full(lgrad, np.nan, dtype = float)
+    stdohs =  np.full(lgrad, np.nan, dtype = float)
+    for i in range(0, lgrad):
+        goodflag = False
+        for j in range(0, len(bpass)):
+            idx = ((rs > robs[i] - bpass[j]) & 
+                   (rs < robs[i] + bpass[j]))
+            if (np.sum(idx) >= nmin):
+                goodflag = True
+                break
+        if (goodflag):
+            stdrs[ i] =    np.std(  rs[idx])
+            medohs[i] = np.median(xyoh[idx])
+            stdohs[i] =    np.std(xyoh[idx])
+        
+    return robs, stdrs, medohs, stdohs, rs, xyoh
 
 if __name__ == '__main__':
-    print('')
+    print('Hello World!')
