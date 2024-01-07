@@ -179,7 +179,7 @@ def calcrsfr(pos0, sfr0, frac = 5.000E-01, ndim = 3):
     rsfr   = rpos[idx]
     return rsfr
 
-def calczgrad(pos, m, hrho, zm9, rmax, res):
+def calczgrad(pos, m, hrho, zm9, rmax, res, O_index=4, H_index=0, EAGLE_rho=False, rhocutidx=None):
     # Search area. First 0.05 kpc, then 0.125, 0.25, 0.5, and finally 1.0 kpc
     bpass  = [5.000E-02, 1.250E-01, 2.500E-01, 5.000E-01, 1.000E+00]
     
@@ -187,13 +187,13 @@ def calczgrad(pos, m, hrho, zm9, rmax, res):
     if (res == 2160): # TNG50-1 equiv.
         pixl   =  1.000E-01
         nmin   =  16 #min particles needed to be observationally equivalent
-    elif (run == 1080): # TNG50-2 equiv.
+    elif (res == 1080): # TNG50-2 equiv.
         pixl   =  2.500E-01
         nmin   =  8
-    elif (run == 540): # TNG50-3 equiv.
+    elif (res == 540): # TNG50-3 equiv.
         pixl   =  5.000E-01
         nmin   =  4
-    elif (run == 270): # TNG50-4 equiv.
+    elif (res == 270): # TNG50-4 equiv.
         pixl   =  1.000E+00
         nmin   =  2
         
@@ -213,15 +213,17 @@ def calczgrad(pos, m, hrho, zm9, rmax, res):
             rs[r,c] = np.sqrt(pixcs[r]**2.000E+00 + 
                               pixcs[c]**2.000E+00 )
     
-    # Will not work for EAGLE
-    rhoidx = hrho > rhocut
+    if EAGLE_rho:
+        rhoidx = rhocutidx
+    else:
+        rhoidx = hrho > rhocut
         
     # Mass map
     xym, x, y = np.histogram2d(pos[:,0], pos[:,1], weights = m, bins = [pixlims, pixlims])
     # Oxygen map
-    xyo, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,4]), bins = [pixlims, pixlims])
+    xyo, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,O_index]), bins = [pixlims, pixlims])
     # Hydrogen map
-    xyh, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,0]), bins = [pixlims, pixlims])
+    xyh, x, y = np.histogram2d(pos[rhoidx,0], pos[rhoidx,1], weights = np.multiply(m[rhoidx], zm9[rhoidx,H_index]), bins = [pixlims, pixlims])
     xym       = np.transpose(xym)
     xyo       = np.transpose(xyo)
     xyh       = np.transpose(xyh)
@@ -239,7 +241,7 @@ def calczgrad(pos, m, hrho, zm9, rmax, res):
     rsortidx = np.argsort(rs)
     rs       =   rs[rsortidx]
     xyoh     = xyoh[rsortidx]
-   
+    
     robs   = np.arange(0.000E+00, rs[-1], dr)
     lgrad  = len(robs)
     stdrs  = np.zeros(lgrad,         dtype = float)
@@ -254,11 +256,103 @@ def calczgrad(pos, m, hrho, zm9, rmax, res):
                 goodflag = True
                 break
         if (goodflag):
-            stdrs[ i] =    np.std(  rs[idx])
+            stdrs [i] =    np.std(  rs[idx])
             medohs[i] = np.median(xyoh[idx])
             stdohs[i] =    np.std(xyoh[idx])
         
     return robs, stdrs, medohs, stdohs, rs, xyoh
+
+def calc_sfr_prof(pos, m, hrho, sfr, rmax, res, EAGLE_rho=False, rhocutidx=None):
+    # Search area. First 0.05 kpc, then 0.125, 0.25, 0.5, and finally 1.0 kpc
+    bpass  = [5.000E-02, 1.250E-01, 2.500E-01, 5.000E-01, 1.000E+00]
+    
+    # Different resolutions need difference pixel sizes
+    if (res == 2160): # TNG50-1 equiv.
+        pixl   =  1.000E-01
+        nmin   =  16 #min particles needed to be observationally equivalent
+    elif (res == 1080): # TNG50-2 equiv.
+        pixl   =  2.500E-01
+        nmin   =  8
+    elif (res == 540): # TNG50-3 equiv.
+        pixl   =  5.000E-01
+        nmin   =  4
+    elif (res == 270): # TNG50-4 equiv.
+        pixl   =  1.000E+00
+        nmin   =  2
+        
+    dr     =  1.00E-01 #kpc
+    pixa   =  pixl**2.000E+00
+    sigcut =  1.000E+00
+    rhocut =  1.300E-01
+    mcut   =  1.000E+01**sigcut * (pixa*1.000E+06)
+    
+    # Create map
+    pixlims = np.arange(-rmax, rmax + pixl, pixl)
+    pix   = len(pixlims) - 1
+    pixcs = pixlims[:-1] + (pixl / 2.000E+00)
+    rs    = np.full((pix, pix), np.nan, dtype = float)
+    for r in range(0, pix):
+        for c in range(0, pix):
+            rs[r,c] = np.sqrt(pixcs[r]**2.000E+00 + 
+                              pixcs[c]**2.000E+00 )
+    
+    if EAGLE_rho:
+        rhoidx = rhocutidx
+    else:
+        rhoidx = hrho > rhocut
+        
+    # Mass map
+    xym  , x, y = np.histogram2d(pos[:,0], pos[:,1], weights = m, bins = [pixlims, pixlims])
+    # SFR map
+    xysfr, x, y = np.histogram2d(pos[:,0], pos[:,1], weights = sfr, bins = [pixlims, pixlims])
+    xym       = np.transpose(xym)
+    xysfr     = np.transpose(xysfr)
+    rs        = np.ravel( rs)
+    xym       = np.ravel(xym)
+    xysfr     = np.ravel(xysfr)
+    xysfr[xysfr < 1.000E-12] = np.nan
+    
+    cutidx   =(xym > mcut) & (~np.isnan(xysfr))
+    rs       =   rs[cutidx]
+    xysfr    = xysfr[cutidx]
+    rsortidx = np.argsort(rs)
+    rs       =   rs [rsortidx]
+    xysfr    = xysfr[rsortidx]
+   
+    robs    = np.arange(0.000E+00, rs[-1], dr)
+    lgrad   = len(robs)
+    stdrs   = np.zeros(lgrad,         dtype = float)
+    medsfrs =  np.full(lgrad, np.nan, dtype = float)
+    stdsfrs =  np.full(lgrad, np.nan, dtype = float)
+    for i in range(0, lgrad):
+        goodflag = False
+        for j in range(0, len(bpass)):
+            idx = ((rs > robs[i] - bpass[j]) & 
+                   (rs < robs[i] + bpass[j]))
+            if (np.sum(idx) >= nmin):
+                goodflag = True
+                break
+        if (goodflag):
+            stdrs  [i] =    np.std(   rs[idx])
+            medsfrs[i] = np.median(xysfr[idx])
+            stdsfrs[i] =    np.std(xysfr[idx])
+    medsfrs = np.nancumsum(medsfrs)/np.nansum(medsfrs)
+        
+    return robs, stdrs, medsfrs, stdsfrs
+
+def grad_valid(r, oh, rscale1, rscale2):
+    
+    good_flag = False
+    
+    fit = ( r > rscale1 ) & ( r < rscale2 ) & ~np.isnan(oh)
+    
+    criteria1 = ( rscale2 - rscale1 ) > 1 # Region we fit gradient needs to be bigger than 1 kpc
+    criteria2 = ( sum(fit) / ( (rscale2 - rscale1)*10 ) ) > 0.9 # 90 per cent of region covered
+    
+    if criteria1 & criteria2:
+        good_flag = True
+        
+    return good_flag
 
 if __name__ == '__main__':
     print('Hello World!')
